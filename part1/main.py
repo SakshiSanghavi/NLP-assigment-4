@@ -37,17 +37,18 @@ def do_train(args, model, train_dataloader, save_dir="./out"):
     model.train()
     progress_bar = tqdm(range(num_training_steps))
 
-    ################################
-    ##### YOUR CODE BEGINGS HERE ###
+    for _ in range(num_epochs):
+        for batch in train_dataloader:
+            batch = {key: value.to(device) for key, value in batch.items()}
 
-    # Implement the training loop --- make sure to use the optimizer and lr_sceduler (learning rate scheduler)
-    # Remember that pytorch uses gradient accumumlation so you need to use zero_grad (https://pytorch.org/tutorials/recipes/recipes/zeroing_out_gradients.html)
-    # You can use progress_bar.update(1) to see the progress during training
-    # You can refer to the pytorch tutorial covered in class for reference
+            optimizer.zero_grad()
+            outputs = model(**batch)
+            loss = outputs.loss
+            loss.backward()
+            optimizer.step()
+            lr_scheduler.step()
 
-    raise NotImplementedError
-
-    ##### YOUR CODE ENDS HERE ######
+            progress_bar.update(1)
 
     print("Training completed...")
     print("Saving Model....")
@@ -86,16 +87,24 @@ def do_eval(eval_dataloader, output_dir, out_file):
 
 # Created a dataladoer for the augmented training dataset
 def create_augmented_dataloader(args, dataset):
-    ################################
-    ##### YOUR CODE BEGINGS HERE ###
+    original_train = dataset["train"]
+    transformed_examples = (
+        original_train.shuffle(seed=42)
+        .select(range(5000))
+        .map(
+            custom_transform,
+            load_from_cache_file=False,
+        )
+    )
+    augmented_dataset = datasets.concatenate_datasets([original_train, transformed_examples])
+    tokenized_dataset = augmented_dataset.map(tokenize_function, batched=True)
+    tokenized_dataset = tokenized_dataset.remove_columns(["text"])
+    tokenized_dataset = tokenized_dataset.rename_column("label", "labels")
+    tokenized_dataset.set_format("torch")
 
-    # Here, 'dataset' is the original dataset. You should return a dataloader called 'train_dataloader' -- this
-    # dataloader will be for the original training split augmented with 5k random transformed examples from the training set.
-    # You may find it helpful to see how the dataloader was created at other place in this code.
-
-    raise NotImplementedError
-
-    ##### YOUR CODE ENDS HERE ######
+    train_dataloader = DataLoader(
+        tokenized_dataset, shuffle=True, batch_size=args.batch_size
+    )
 
     return train_dataloader
 
@@ -105,7 +114,10 @@ def create_transformed_dataloader(args, dataset, debug_transformation):
     # Print 5 random transformed examples
     if debug_transformation:
         small_dataset = dataset["test"].shuffle(seed=42).select(range(5))
-        small_transformed_dataset = small_dataset.map(custom_transform, load_from_cache_file=False)
+        small_transformed_dataset = small_dataset.map(
+            custom_transform,
+            load_from_cache_file=False,
+        )
         for k in range(5):
             print("Original Example ", str(k))
             print(small_dataset[k])
@@ -116,7 +128,14 @@ def create_transformed_dataloader(args, dataset, debug_transformation):
 
         exit()
 
-    transformed_dataset = dataset["test"].map(custom_transform, load_from_cache_file=False)
+    eval_split = dataset["test"]
+    if args.debug_train:
+        eval_split = eval_split.shuffle(seed=42).select(range(1000))
+
+    transformed_dataset = eval_split.map(
+        custom_transform,
+        load_from_cache_file=False,
+    )
     transformed_tokenized_dataset = transformed_dataset.map(tokenize_function, batched=True, load_from_cache_file=False)
     transformed_tokenized_dataset = transformed_tokenized_dataset.remove_columns(["text"])
     transformed_tokenized_dataset = transformed_tokenized_dataset.rename_column("label", "labels")
@@ -145,7 +164,6 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=5e-5)
     parser.add_argument("--num_epochs", type=int, default=3)
     parser.add_argument("--batch_size", type=int, default=8)
-
     args = parser.parse_args()
 
     global device

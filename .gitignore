@@ -2,3 +2,12 @@
 __pycache__/
 *.pyc
 .claude/settings.local.json
+
+# Local environments and generated experiment artifacts
+venv/
+.venv*/
+/modal-downloads/
+/part2/checkpoints/
+/part2/logs/
+/part2/records/t5_*.pkl
+/part2/results/t5_*.sql
